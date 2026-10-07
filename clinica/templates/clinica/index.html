@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veterinaria API - Panel</title>
+<style>
+  :root { --azul:#1f3a5f; --gris:#f2f4f7; --borde:#d0d5dd; --ok:#067647; --mal:#b42318; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, Segoe UI, Arial, sans-serif; background:var(--gris); color:#1d2939; }
+  header { background:var(--azul); color:#fff; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  header h1 { font-size:18px; margin:0; }
+  main { max-width:960px; margin:20px auto; padding:0 14px; }
+  .card { background:#fff; border:1px solid var(--borde); border-radius:10px; padding:16px; margin-bottom:16px; }
+  h2 { margin:0 0 10px; font-size:16px; color:var(--azul); }
+  label { display:block; font-size:13px; margin:8px 0 3px; }
+  input, select { width:100%; padding:8px; border:1px solid var(--borde); border-radius:6px; font-size:14px; }
+  button { background:var(--azul); color:#fff; border:0; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:14px; margin-top:10px; }
+  button.sec { background:#fff; color:var(--azul); border:1px solid var(--azul); }
+  button.mini { padding:4px 9px; font-size:12px; margin:0 0 0 6px; }
+  button.peligro { background:var(--mal); }
+  .fila { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+  .tabs button { margin-right:6px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:9px 0; border-bottom:1px solid var(--gris); font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:99px; background:var(--gris); border:1px solid var(--borde); }
+  #msg { padding:10px 14px; border-radius:8px; margin-bottom:14px; display:none; font-size:14px; }
+  #msg.ok { display:block; background:#ecfdf3; color:var(--ok); border:1px solid #abefc6; }
+  #msg.mal { display:block; background:#fef3f2; color:var(--mal); border:1px solid #fecdca; }
+  .oculto { display:none; }
+  small.nota { color:#667085; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Veterinaria API</h1>
+  <div id="sesion" class="oculto"><span id="quien"></span> <button class="sec mini" id="btn-salir">Cerrar sesión</button></div>
+</header>
+<main>
+  <div id="msg"></div>
+
+  <section id="vista-acceso">
+    <div class="card" style="max-width:440px;margin:auto">
+      <div class="tabs"><button id="tab-login">Ingresar</button><button id="tab-reg" class="sec">Crear cuenta</button></div>
+      <form id="form-login">
+        <label>Usuario</label><input id="l-user" autocomplete="username" required>
+        <label>Contraseña</label><input id="l-pass" type="password" autocomplete="current-password" required>
+        <button type="submit">Ingresar</button>
+        <p><small class="nota">Demo: cliente_demo, vet_demo o admin_demo (clave Demo12345!)</small></p>
+      </form>
+      <form id="form-reg" class="oculto">
+        <label>Usuario (mín. 4 caracteres)</label><input id="r-user" required>
+        <label>Correo</label><input id="r-mail" type="email" required>
+        <label>Teléfono (opcional)</label><input id="r-tel">
+        <label>Contraseña</label><input id="r-pass" type="password" autocomplete="new-password" required>
+        <label>Repetir contraseña</label><input id="r-pass2" type="password" autocomplete="new-password" required>
+        <button type="submit">Registrarme</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="vista-app" class="oculto">
+    <div class="card" id="card-mascotas">
+      <h2>Mascotas</h2>
+      <ul id="lista-mascotas"></ul>
+      <form id="form-mascota" class="oculto">
+        <div class="fila">
+          <div><label>Nombre</label><input id="m-nombre" required></div>
+          <div><label>Especie</label>
+            <select id="m-especie"><option value="PERRO">Perro</option><option value="GATO">Gato</option>
+            <option value="AVE">Ave</option><option value="ROEDOR">Roedor</option><option value="OTRO">Otro</option></select></div>
+          <div><label>Raza</label><input id="m-raza"></div>
+        </div>
+        <button type="submit">Agregar mascota</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Citas</h2>
+      <ul id="lista-citas"></ul>
+      <form id="form-cita" class="oculto">
+        <div class="fila">
+          <div><label>Mascota</label><select id="c-mascota" required></select></div>
+          <div><label>Veterinario</label><select id="c-vet" required></select></div>
+          <div><label>Fecha y hora</label><input id="c-fecha" type="datetime-local" required></div>
+        </div>
+        <label>Motivo</label><input id="c-motivo" required minlength="5">
+        <button type="submit">Agendar cita</button>
+      </form>
+    </div>
+    <p><small class="nota">Se muestran los primeros 10 resultados de cada lista. API completa en /api/v1/.</small></p>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let access = sessionStorage.getItem("access") || "";
+let refresh = sessionStorage.getItem("refresh") || "";
+let yo = null;
+
+function aviso(texto, tipo) {
+  const m = $("msg"); m.textContent = texto; m.className = tipo;
+  if (tipo === "ok") setTimeout(() => { m.className = ""; }, 4000);
+}
+function limpiarAviso() { $("msg").className = ""; }
+
+function textoError(json, status) {
+  if (status === 429) return "Demasiados intentos. Espera un minuto e inténtalo de nuevo.";
+  if (!json || !json.errores) return "Error " + status;
+  const e = json.errores;
+  if (typeof e === "string") return e;
+  return Object.entries(e).map(([k, v]) => (k === "detail" || k === "non_field_errors" ? "" : k + ": ") + (Array.isArray(v) ? v.join(" ") : (typeof v === "object" ? JSON.stringify(v) : v))).join(" | ");
+}
+
+function guardarTokens(t) {
+  access = t.access; if (t.refresh) refresh = t.refresh;
+  sessionStorage.setItem("access", access); sessionStorage.setItem("refresh", refresh);
+}
+function borrarTokens() {
+  access = ""; refresh = ""; yo = null;
+  sessionStorage.removeItem("access"); sessionStorage.removeItem("refresh");
+}
+
+async function pedir(ruta, opciones) {
+  const o = opciones || {};
+  const enviar = async () => {
+    const headers = { "Content-Type": "application/json" };
+    if (o.auth !== false && access) headers.Authorization = "Bearer " + access;
+    return fetch("/api/v1" + ruta, { method: o.method || "GET", headers, body: o.body ? JSON.stringify(o.body) : undefined });
+  };
+  let res = await enviar();
+  if (res.status === 401 && o.auth !== false && refresh) {
+    const r = await fetch("/api/v1/auth/refresh/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh }) });
+    if (r.ok) { guardarTokens((await r.json()).datos); res = await enviar(); }
+    else { borrarTokens(); mostrarAcceso(); }
+  }
+  let json = null;
+  try { json = await res.json(); } catch (e) { /* 204 sin cuerpo */ }
+  return { ok: res.ok, status: res.status, json };
+}
+
+function el(tag, texto, clase) {
+  const n = document.createElement(tag);
+  if (texto !== undefined) n.textContent = texto;
+  if (clase) n.className = clase;
+  return n;
+}
+function fechaLocal(iso) { return new Date(iso).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" }); }
+
+function mostrarAcceso() {
+  $("vista-acceso").classList.remove("oculto"); $("vista-app").classList.add("oculto"); $("sesion").classList.add("oculto");
+}
+
+async function entrar() {
+  const r = await pedir("/auth/me/");
+  if (!r.ok) { borrarTokens(); mostrarAcceso(); return; }
+  yo = r.json.datos;
+  $("quien").textContent = yo.username + " (" + yo.rol + ")";
+  $("sesion").classList.remove("oculto");
+  $("vista-acceso").classList.add("oculto"); $("vista-app").classList.remove("oculto");
+  const puedeCrear = yo.rol === "CLIENTE" || yo.rol === "ADMIN";
+  $("form-mascota").classList.toggle("oculto", !puedeCrear);
+  $("form-cita").classList.toggle("oculto", !puedeCrear);
+  await cargarTodo();
+}
+
+async function cargarTodo() {
+  const [m, v, c] = await Promise.all([pedir("/mascotas/"), pedir("/veterinarios/"), pedir("/citas/")]);
+  const mascotas = m.ok ? m.json.datos.results : [];
+  const vets = v.ok ? v.json.datos.results : [];
+  const citas = c.ok ? c.json.datos.results : [];
+
+  const lm = $("lista-mascotas"); lm.replaceChildren();
+  if (!mascotas.length) lm.appendChild(el("li", "Sin mascotas registradas."));
+  mascotas.forEach((x) => {
+    const li = el("li"); li.appendChild(el("span", x.nombre + " · " + x.especie + (x.raza ? " · " + x.raza : "")));
+    if (yo.rol !== "VETERINARIO") {
+      const b = el("button", "Eliminar", "mini peligro");
+      b.onclick = async () => {
+        if (!confirm("¿Eliminar a " + x.nombre + " y sus citas?")) return;
+        const r = await pedir("/mascotas/" + x.id + "/", { method: "DELETE" });
+        r.ok ? (aviso("Mascota eliminada.", "ok"), cargarTodo()) : aviso(textoError(r.json, r.status), "mal");
+      };
+      li.appendChild(b);
+    }
+    lm.appendChild(li);
+  });
+
+  const sm = $("c-mascota"); sm.replaceChildren();
+  mascotas.forEach((x) => { const o = el("option", x.nombre); o.value = x.id; sm.appendChild(o); });
+  const sv = $("c-vet"); sv.replaceChildren();
+  vets.forEach((x) => { const o = el("option", "Dr(a). " + x.username); o.value = x.usuario; sv.appendChild(o); });
+
+  const lc = $("lista-citas"); lc.replaceChildren();
+  if (!citas.length) lc.appendChild(el("li", "Sin citas."));
+  citas.forEach((x) => {
+    const li = el("li");
+    const info = el("span", "#" + x.id + " · " + x.mascota_nombre + " con " + x.veterinario_nombre + " · " + fechaLocal(x.fecha_hora) + " · " + x.motivo + " ");
+    info.appendChild(el("span", x.estado, "tag"));
+    li.appendChild(info);
+    const acciones = el("span");
+    const cambiar = (texto, estado, clase) => {
+      const b = el("button", texto, "mini " + (clase || ""));
+      b.onclick = async () => {
+        const r = await pedir("/citas/" + x.id + "/", { method: "PATCH", body: { estado } });
+        r.ok ? (aviso("Cita actualizada.", "ok"), cargarTodo()) : aviso(textoError(r.json, r.status), "mal");
+      };
+      acciones.appendChild(b);
+    };
+    if (yo.rol === "VETERINARIO") {
+      if (x.estado === "PENDIENTE") cambiar("Confirmar", "CONFIRMADA");
+      if (x.estado === "CONFIRMADA") cambiar("Completar", "COMPLETADA");
+    }
+    if (yo.rol !== "VETERINARIO" && (x.estado === "PENDIENTE" || x.estado === "CONFIRMADA")) cambiar("Cancelar", "CANCELADA", "peligro");
+    li.appendChild(acciones);
+    lc.appendChild(li);
+  });
+}
+
+$("tab-login").onclick = () => { $("form-login").classList.remove("oculto"); $("form-reg").classList.add("oculto"); $("tab-login").classList.remove("sec"); $("tab-reg").classList.add("sec"); limpiarAviso(); };
+$("tab-reg").onclick = () => { $("form-reg").classList.remove("oculto"); $("form-login").classList.add("oculto"); $("tab-reg").classList.remove("sec"); $("tab-login").classList.add("sec"); limpiarAviso(); };
+
+$("form-login").onsubmit = async (e) => {
+  e.preventDefault(); limpiarAviso();
+  const r = await pedir("/auth/login/", { method: "POST", auth: false, body: { username: $("l-user").value.trim(), password: $("l-pass").value } });
+  if (!r.ok) return aviso(r.status === 401 ? "Usuario o contraseña incorrectos." : textoError(r.json, r.status), "mal");
+  guardarTokens(r.json.datos); $("l-pass").value = ""; await entrar();
+};
+
+$("form-reg").onsubmit = async (e) => {
+  e.preventDefault(); limpiarAviso();
+  const r = await pedir("/auth/registro/", { method: "POST", auth: false, body: {
+    username: $("r-user").value.trim(), email: $("r-mail").value.trim(), telefono: $("r-tel").value.trim(),
+    password: $("r-pass").value, password2: $("r-pass2").value } });
+  if (!r.ok) return aviso(textoError(r.json, r.status), "mal");
+  aviso("Cuenta creada. Ya puedes ingresar.", "ok"); $("l-user").value = $("r-user").value; $("tab-login").click();
+  $("r-pass").value = ""; $("r-pass2").value = "";
+};
+
+$("form-mascota").onsubmit = async (e) => {
+  e.preventDefault(); limpiarAviso();
+  const r = await pedir("/mascotas/", { method: "POST", body: { nombre: $("m-nombre").value, especie: $("m-especie").value, raza: $("m-raza").value } });
+  if (!r.ok) return aviso(textoError(r.json, r.status), "mal");
+  $("m-nombre").value = ""; $("m-raza").value = ""; aviso("Mascota agregada.", "ok"); cargarTodo();
+};
+
+$("form-cita").onsubmit = async (e) => {
+  e.preventDefault(); limpiarAviso();
+  const r = await pedir("/citas/", { method: "POST", body: {
+    mascota: Number($("c-mascota").value), veterinario: Number($("c-vet").value),
+    fecha_hora: new Date($("c-fecha").value).toISOString(), motivo: $("c-motivo").value } });
+  if (!r.ok) return aviso(textoError(r.json, r.status), "mal");
+  $("c-motivo").value = ""; aviso("Cita agendada (queda pendiente de confirmación).", "ok"); cargarTodo();
+};
+
+$("btn-salir").onclick = async () => {
+  if (refresh) await pedir("/auth/logout/", { method: "POST", body: { refresh } });
+  borrarTokens(); mostrarAcceso(); aviso("Sesión cerrada.", "ok");
+};
+
+if (access) entrar(); else mostrarAcceso();
+</script>
+</body>
+</html>
